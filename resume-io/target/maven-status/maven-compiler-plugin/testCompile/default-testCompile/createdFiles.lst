@@ -1,0 +1,7 @@
+com\resume\resumeio\AuthIntegrationTest.class
+com\resume\resumeio\InterviewConcurrencyIntegrationTest.class
+com\resume\resumeio\ResumeIoApplicationTests.class
+com\resume\resumeio\InterviewEvaluationTest.class
+com\resume\resumeio\RagKnowledgeServiceTest.class
+com\resume\resumeio\ReportPersistenceIntegrationTest.class
+com\resume\resumeio\SensitiveDataMaskTest.class

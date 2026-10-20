@@ -1,0 +1,12 @@
+target/
+.idea/
+.git/
+*.iml
+.env
+.env.*
+!.env.example
+HELP.md
+OPERATIONS.md
+RAG_EVALUATION.md
+SECURITY.md
+docker-compose.yml

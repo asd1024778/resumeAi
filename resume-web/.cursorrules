@@ -1,0 +1,97 @@
+# Resume Web 前端开发规范
+
+## 技术栈
+
+- Vue 3 + TypeScript + Vite
+- 状态管理：Pinia
+- 路由：Vue Router 4
+- HTTP：Axios（封装于 `@/api/request.ts`）
+- 样式：Tailwind CSS
+- 图标：@element-plus/icons-vue
+- 图表：ECharts
+- Markdown：marked
+- SSE：@microsoft/fetch-event-source
+
+## Vue 组件规范（强制）
+
+1. **必须使用 Vue 3 Composition API**，禁止 Options API（`export default { data, methods }` 等形式）。
+2. **必须使用 `<script setup lang="ts">`**，禁止 `<script>` 无 setup、禁止纯 JavaScript。
+3. 组件文件名使用 **PascalCase**（如 `UserProfile.vue`）。
+4. Props 和 Emits 必须使用 TypeScript 类型定义（`defineProps<T>()` / `defineEmits<T>()`）。
+5. 禁止在模板中编写复杂逻辑，应使用 computed 或 methods。
+
+## 异步请求规范（强制）
+
+1. **所有异步操作必须使用 `async/await`**，禁止裸 `.then()` / `.catch()` 链式调用（拦截器等底层封装除外）。
+2. **必须包裹 `try-catch`**，在 catch 中处理错误并更新 UI 错误态。
+3. HTTP 请求统一通过 `@/api` 目录下的模块发起，禁止在组件内直接 `axios.get/post`。
+4. SSE 请求使用 `@microsoft/fetch-event-source`，同样遵循 async/await + try-catch。
+
+### 标准请求模板
+
+```typescript
+const loading = ref(false)
+const error = ref<string | null>(null)
+
+async function fetchData() {
+  loading.value = true
+  error.value = null
+  try {
+    const result = await someApi.getData()
+    // 处理成功结果
+  } catch (err) {
+    error.value = formatError(err)
+  } finally {
+    loading.value = false
+  }
+}
+```
+
+## 类型定义规范（强制）
+
+1. **所有接口返回数据必须定义 `interface`**，禁止 `any`、禁止无类型的 `unknown` 直接透传。
+2. 接口类型定义放在 `@/types/` 目录，按业务模块拆分文件。
+3. API 函数必须声明返回类型，例如：`async function getUser(): Promise<ApiResponse<User>>`。
+4. 组件 Props、Store State、路由 Meta 均需显式类型。
+
+## UI 交互规范（强制）
+
+1. **所有涉及异步数据的操作必须包含加载态（loading）**，使用 `ref<boolean>` 或 Pinia store 管理。
+2. **必须包含错误态（error）**，向用户展示可读的错误信息，禁止静默失败。
+3. 加载态示例：按钮 disabled + loading 文字/骨架屏/Spinner。
+4. 错误态示例：错误提示文字、Toast、Alert 组件或内联 error message。
+5. 空数据态（empty）建议一并处理，但不强制。
+
+## 目录结构
+
+```
+src/
+├── api/          # API 请求模块（按业务拆分）
+├── assets/       # 静态资源
+├── components/   # 可复用组件
+├── views/        # 页面级组件
+├── stores/       # Pinia 状态
+├── types/        # TypeScript 类型定义
+├── utils/        # 工具函数
+└── router/       # 路由配置
+```
+
+## 路径别名
+
+- 使用 `@/` 引用 `src/` 下的模块，禁止相对路径跨多层目录（如 `../../../`）。
+
+## 状态管理
+
+- 跨组件/跨页面共享状态使用 Pinia，定义在 `@/stores/`。
+- Store 必须使用 Composition API 风格（`defineStore` + setup 函数）。
+
+## 样式
+
+- 优先使用 Tailwind CSS 工具类。
+- 组件 scoped 样式仅用于 Tailwind 无法表达的复杂样式。
+
+## 代码质量
+
+- 禁止 `console.log` 提交到生产代码，调试日志开发完成后必须移除。
+- 禁止硬编码 API 地址，开发环境通过 Vite Proxy（`/api`、`/ws` → `localhost:8080`）转发。
+- 新增功能时同步补充 `@/types/` 中的类型定义。
