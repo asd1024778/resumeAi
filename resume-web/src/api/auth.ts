@@ -1,5 +1,11 @@
 import request from './request'
-import type { LoginRequest, LoginResponse, RegisterRequest } from '@/types/auth'
+import type {
+  LoginRequest,
+  LoginResponse,
+  RegisterRequest,
+  SendSmsCodeRequest,
+  SendSmsCodeResponse,
+} from '@/types/auth'
 import type { UpdateUserProfileRequest } from '@/types/profile'
 import type { User } from '@/types'
 
@@ -8,8 +14,13 @@ export async function login(params: LoginRequest): Promise<LoginResponse> {
   return request.post('/auth/login', params)
 }
 
-/** 用户注册 */
-export async function register(params: RegisterRequest): Promise<User> {
+/** 发送注册短信验证码（后端生成 6 位纯数字） */
+export async function sendSmsCode(params: SendSmsCodeRequest): Promise<SendSmsCodeResponse> {
+  return request.post('/auth/sms-code', params)
+}
+
+/** 手机号注册（验证码校验通过后落库，成功即返回 JWT） */
+export async function register(params: RegisterRequest): Promise<LoginResponse> {
   return request.post('/auth/register', params)
 }
 

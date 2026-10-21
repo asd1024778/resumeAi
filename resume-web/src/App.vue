@@ -7,7 +7,8 @@ const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 
-const showHeader = computed(() => route.name !== 'login')
+// 登录、注册页是整屏卡片布局，不显示顶部导航
+const showHeader = computed(() => route.name !== 'login' && route.name !== 'register')
 const isLoggedIn = computed(() => userStore.isLoggedIn)
 
 async function handleLogout(): Promise<void> {
@@ -34,6 +35,13 @@ async function handleLogout(): Promise<void> {
             class="text-sm text-blue-600 hover:text-blue-700"
           >
             登录
+          </router-link>
+          <router-link
+            v-if="!isLoggedIn"
+            to="/register"
+            class="text-sm text-blue-600 hover:text-blue-700"
+          >
+            注册
           </router-link>
           <router-link
             v-else

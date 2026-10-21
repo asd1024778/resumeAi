@@ -92,7 +92,14 @@ function handleKeydown(event: KeyboardEvent): void {
         </button>
       </form>
 
-      <p class="mt-4 text-center text-xs text-gray-400">
+      <p class="mt-4 text-center text-xs text-gray-500">
+        还没有账号？
+        <router-link to="/register" class="text-blue-600 hover:text-blue-700">
+          手机号注册
+        </router-link>
+      </p>
+
+      <p class="mt-2 text-center text-xs text-gray-400">
         演示账号：demo / 123456
       </p>
     </div>

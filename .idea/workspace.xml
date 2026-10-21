@@ -1,11 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="e3ad92d2-982b-4825-b121-829953231df9" name="更改" comment="1.0.1" />
+    <list default="true" id="e3ad92d2-982b-4825-b121-829953231df9" name="更改" comment="1.0.0">
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ChangesViewManager">
+    <option name="groupingKeys">
+      <option value="directory" />
+      <option value="repository" />
+    </option>
   </component>
   <component name="Git.Settings">
     <option name="INCOMING_COMMITS_CHECK_STRATEGY" value="FETCH" />
@@ -23,33 +32,33 @@
     &quot;assignee&quot;: &quot;asd1024778&quot;
   }
 }</component>
-  <component name="GitHubPullRequestState"><![CDATA[{
-  "prStates": [
+  <component name="GitHubPullRequestState">{
+  &quot;prStates&quot;: [
     {
-      "id": {
-        "id": "PR_kwDOTP4pa88AAAABJhmKYA",
-        "number": 2
+      &quot;id&quot;: {
+        &quot;id&quot;: &quot;PR_kwDOTP4pa88AAAABJhmKYA&quot;,
+        &quot;number&quot;: 2
       },
-      "lastSeen": 1792490732000
+      &quot;lastSeen&quot;: 1792490732000
     }
   ]
-}]]></component>
-  <component name="GithubPullRequestsUISettings"><![CDATA[{
-  "selectedUrlAndAccountId": {
-    "url": "https://github.com/asd1024778/resumeAi.git",
-    "accountId": "92d0bae1-4382-4d6f-8c87-c5e6d1e1599b"
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/asd1024778/resumeAi.git&quot;,
+    &quot;accountId&quot;: &quot;92d0bae1-4382-4d6f-8c87-c5e6d1e1599b&quot;
   },
-  "recentNewPullRequestHead": {
-    "server": {
-      "useHttp": false,
-      "host": "github.com",
-      "port": null,
-      "suffix": null
+  &quot;recentNewPullRequestHead&quot;: {
+    &quot;server&quot;: {
+      &quot;useHttp&quot;: false,
+      &quot;host&quot;: &quot;github.com&quot;,
+      &quot;port&quot;: null,
+      &quot;suffix&quot;: null
     },
-    "owner": "asd1024778",
-    "repository": "resumeAi"
+    &quot;owner&quot;: &quot;asd1024778&quot;,
+    &quot;repository&quot;: &quot;resumeAi&quot;
   }
-}]]></component>
+}</component>
   <component name="KubernetesApiPersistence">{}</component>
   <component name="KubernetesApiProvider">{
   &quot;isMigrated&quot;: true
@@ -72,6 +81,7 @@
     "Docker.docker-compose.yml.frontend: Compose 部署.executor": "Run",
     "Docker.docker-compose.yml.mysql: Compose 部署.executor": "Run",
     "Docker.docker-compose.yml: Compose 部署.executor": "Run",
+    "Docker.resume-io: Compose 部署.executor": "Run",
     "Docker.resume-web/Dockerfile.executor": "Run",
     "ModuleVcsDetector.initialDetectionPerformed": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
@@ -80,7 +90,7 @@
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "SHARE_PROJECT_CONFIGURATION_FILES": "true",
     "codeWithMe.voiceChat.enabledByDefault": "false",
-    "git-widget-placeholder": "master",
+    "git-widget-placeholder": "main",
     "git.auto.fetch.suggestion.counter": "1",
     "kotlin-language-version-configured": "true",
     "last_opened_file_path": "D:/Project/Java_projeck",
@@ -89,7 +99,7 @@
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
-  <component name="RunManager" selected="Docker.docker-compose.yml: Compose 部署">
+  <component name="RunManager" selected="Docker.resume-web/Dockerfile">
     <configuration default="true" type="docker-deploy" factoryName="docker-compose.yml" temporary="true">
       <deployment type="docker-compose.yml">
         <settings />
@@ -139,6 +149,7 @@
     <configuration name="resume-web/Dockerfile" type="docker-deploy" factoryName="dockerfile" temporary="true" server-name="Docker">
       <deployment type="dockerfile">
         <settings>
+          <option name="containerName" value="" />
           <option name="sourceFilePath" value="resume-web/Dockerfile" />
         </settings>
       </deployment>
@@ -147,9 +158,9 @@
     <recent_temporary>
       <list>
         <item itemvalue="Docker.resume-web/Dockerfile" />
+        <item itemvalue="Docker.docker-compose.yml: Compose 部署" />
         <item itemvalue="Docker.docker-compose.yml.frontend: Compose 部署" />
         <item itemvalue="Docker.docker-compose.yml.mysql: Compose 部署" />
-        <item itemvalue="Docker.docker-compose.yml: Compose 部署" />
       </list>
     </recent_temporary>
   </component>
@@ -182,6 +193,7 @@
       <workItem from="1792297396957" duration="1361000" />
       <workItem from="1792485731727" duration="2283000" />
       <workItem from="1792488770987" duration="1867000" />
+      <workItem from="1792491571287" duration="646000" />
     </task>
     <task id="LOCAL-00001" summary="1.0.1">
       <option name="closed" value="true" />
@@ -204,6 +216,29 @@
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State>
+              <option name="FILTERS">
+                <map>
+                  <entry key="branch">
+                    <value>
+                      <list>
+                        <option value="origin/main" />
+                      </list>
+                    </value>
+                  </entry>
+                </map>
+              </option>
+            </State>
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="1.0.1" />

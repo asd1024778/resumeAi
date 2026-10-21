@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Home from '@/views/Home.vue'
 import LoginView from '@/views/LoginView.vue'
+import RegisterView from '@/views/RegisterView.vue'
 import ProfileView from '@/views/ProfileView.vue'
 import InterviewRoom from '@/views/InterviewRoom.vue'
 import Report from '@/views/Report.vue'
@@ -18,6 +19,12 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: LoginView,
+      meta: { guestOnly: true },
+    },
+    {
+      path: '/register',
+      name: 'register',
+      component: RegisterView,
       meta: { guestOnly: true },
     },
     {
