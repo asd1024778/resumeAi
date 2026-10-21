@@ -4,7 +4,9 @@ import com.resume.resumeio.dto.*;
 import com.resume.resumeio.entity.UserEntity;
 import com.resume.resumeio.security.JwtTokenProvider;
 import com.resume.resumeio.security.SecurityUtils;
+import com.resume.resumeio.service.SmsCodeService;
 import com.resume.resumeio.service.UserService;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
@@ -13,7 +15,7 @@ import reactor.core.scheduler.Schedulers;
 /**
  * 认证与用户资料 API 控制器。
  * <p>
- * 职责：处理用户登录、注册、当前用户信息查询及敏感资料更新。
+ * 职责：处理用户登录、手机号注册（含短信验证码）、当前用户信息查询及敏感资料更新。
  * 基础路径：{@code /api/auth}
  * </p>
  */
@@ -25,16 +27,22 @@ public class AuthController {
     private final UserService userService;
     /** JWT 令牌生成器，登录成功后签发访问令牌 */
     private final JwtTokenProvider jwtTokenProvider;
+    /** 短信验证码服务，手机号注册时下发与校验验证码 */
+    private final SmsCodeService smsCodeService;
 
     /**
      * 构造器注入依赖。
      *
      * @param userService        用户服务
      * @param jwtTokenProvider   JWT 令牌提供者
+     * @param smsCodeService     短信验证码服务
      */
-    public AuthController(UserService userService, JwtTokenProvider jwtTokenProvider) {
+    public AuthController(UserService userService,
+                          JwtTokenProvider jwtTokenProvider,
+                          SmsCodeService smsCodeService) {
         this.userService = userService;
         this.jwtTokenProvider = jwtTokenProvider;
+        this.smsCodeService = smsCodeService;
     }
 
     /**
@@ -68,22 +76,56 @@ public class AuthController {
     }
 
     /**
-     * 用户注册。
+     * 发送注册短信验证码。
+     * <p>
+     * 路径：{@code POST /api/auth/sms-code}<br>
+     * 权限：公开接口，无需登录<br>
+     * 入参：{@link SendSmsCodeRequest}（phone）<br>
+     * 出参：{@link ApiResponse}{@code <}{@link SendSmsCodeResponse}{@code >}，
+     * 含有效期与冷却时间；开发期还会回传验证码本身（{@code app.sms.debug-return-code=true}）<br>
+     * 失败：手机号格式错误、该号已注册、60 秒内重复发送 → code=500 + 可读提示
+     * </p>
+     */
+    @PostMapping("/sms-code")
+    public Mono<ApiResponse<SendSmsCodeResponse>> sendSmsCode(@RequestBody SendSmsCodeRequest request) {
+        return Mono.fromCallable(() -> {
+                    // 手机号格式校验 + 生成 6 位验证码 + 存 Redis/内存 + 下发（日志通道）
+                    String phone = request == null ? null : request.getPhone();
+                    return ApiResponse.success(smsCodeService.sendRegisterCode(phone));
+                })
+                .subscribeOn(Schedulers.boundedElastic())
+                // 业务校验失败按统一格式返回，不让异常冒泡成 500 堆栈
+                .onErrorResume(IllegalArgumentException.class,
+                        e -> Mono.just(ApiResponse.error(e.getMessage())));
+    }
+
+    /**
+     * 手机号注册（需短信验证码）。
      * <p>
      * 路径：{@code POST /api/auth/register}<br>
      * 权限：公开接口，无需登录<br>
-     * 入参：{@link RegisterRequest}（用户名、密码等注册信息）<br>
-     * 出参：{@link ApiResponse}{@code <}{@link UserDto}{@code >}，成功时返回新用户信息；参数非法时返回错误消息
+     * 入参：{@link RegisterRequest}（phone、code、password，用户名可留空默认用手机号）<br>
+     * 出参：{@link ApiResponse}{@code <}{@link LoginResponse}{@code >}，
+     * 注册成功后直接签发 JWT，前端可免二次登录；失败时返回可读错误消息
      * </p>
      */
     @PostMapping("/register")
-    public Mono<ApiResponse<UserDto>> register(@RequestBody RegisterRequest request) {
-        // 在弹性线程池执行注册逻辑并包装为成功响应
-        return Mono.fromCallable(() -> ApiResponse.success(userService.register(request)))
+    public Mono<ApiResponse<LoginResponse>> register(@RequestBody RegisterRequest request) {
+        return Mono.fromCallable(() -> {
+                    // 校验验证码并落库，返回脱敏用户信息
+                    UserDto created = userService.register(request);
+                    // 注册即登录：复用登录接口的令牌签发逻辑
+                    String token = jwtTokenProvider.generateToken(created.getId(), created.getUsername());
+                    return ApiResponse.success(new LoginResponse(token, created));
+                })
                 .subscribeOn(Schedulers.boundedElastic())
-                // 捕获参数校验失败（如用户名已存在），返回业务错误而非 500
+                // 捕获参数校验失败（手机号格式、验证码错误、用户名/手机号重复），返回业务错误而非 500
                 .onErrorResume(IllegalArgumentException.class,
-                        e -> Mono.just(ApiResponse.error(e.getMessage())));
+                        e -> Mono.just(ApiResponse.error(e.getMessage())))
+                // 并发注册兜底：两个请求同时通过 existsByPhone 检查时，由数据库唯一索引拦截，
+                // 这里把约束冲突翻译成可读提示，避免前端看到 500 堆栈
+                .onErrorResume(DataIntegrityViolationException.class,
+                        e -> Mono.just(ApiResponse.error("该手机号或用户名已被注册，请直接登录")));
     }
 
     /**

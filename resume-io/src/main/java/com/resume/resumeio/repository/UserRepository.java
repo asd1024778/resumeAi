@@ -31,4 +31,24 @@ public interface UserRepository extends JpaRepository<UserEntity, Long> {
      * @return true 表示用户名已存在，false 表示可用
      */
     boolean existsByUsername(String username);
+
+    /**
+     * 按手机号精确查询用户。
+     * <p>
+     * 用途：为后续「手机号 + 验证码登录」「找回密码」预留。
+     *
+     * @param phone 11 位手机号
+     * @return 匹配的用户实体，不存在则返回 Optional.empty()
+     */
+    Optional<UserEntity> findByPhone(String phone);
+
+    /**
+     * 检查指定手机号是否已被注册。
+     * <p>
+     * 用途：① 发送验证码前拦截重复注册；② 注册落库前做最终唯一性校验。
+     *
+     * @param phone 11 位手机号
+     * @return true 表示该手机号已注册
+     */
+    boolean existsByPhone(String phone);
 }

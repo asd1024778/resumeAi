@@ -84,7 +84,8 @@ flowchart TB
 Java_projeck/
 ├── README.md                 # 本文件
 ├── docker-compose.yml        # ★ 全栈一键启动：MySQL + Redis + 后端 + 前端
-├── .env                      # 全栈 compose 的环境变量（含 API Key，勿提交）
+├── .env.example              # 环境变量模板（可提交，不含真实密钥）
+├── .env                      # 本机真实配置（含 API Key，已被 .gitignore 忽略）
 ├── resume-io/                # 后端
 │   ├── src/main/java/        # Java 源码（含cursor生成的详细中文注释）
 │   ├── src/main/resources/   # application.properties 等配置
@@ -114,7 +115,7 @@ Java_projeck/
 - **Maven 3.8+**
 - **Node.js 20+**（前端）
 - **Docker Desktop**（推荐：用它跑 MySQL / Redis，或直接全栈容器化）
-- **DeepSeek API Key**（环境变量 `DASHSCOPE_API_KEY`）
+- **DeepSeek API Key**（环境变量 `DEEPSEEK_API_KEY`，见下文「AI 配置与密钥管理」）
 
 ### 方式一：全栈 Docker 一键启动（最省事）
 
@@ -122,7 +123,7 @@ Java_projeck/
 
 ```powershell
 cd D:\Project\Java_projeck
-copy .env.example .env        # 首次：填好 DASHSCOPE_API_KEY
+copy .env.example .env        # 首次：填好 DEEPSEEK_API_KEY
 docker compose up -d --build  # 首次构建约 3~10 分钟
 docker compose ps             # 等 4 个容器都 Up (healthy)
 docker compose logs -f backend
@@ -166,7 +167,7 @@ cd resume-io
 $env:JAVA_HOME    = "D:\application\java\jdk-17"   # 必须是 JDK 17
 $env:MYSQL_PORT   = "3307"
 $env:REDIS_PORT   = "6380"
-$env:DASHSCOPE_API_KEY = "<你的 Key>"
+$env:DEEPSEEK_API_KEY = "<你的 Key>"
 mvn spring-boot:run
 ```
 
@@ -328,7 +329,9 @@ JPA 自动建表（`spring.jpa.hibernate.ddl-auto=update`）：
 | `server.port` | `8080` | 后端端口 |
 | `MYSQL_*` | `localhost:3306/resume_db` | MySQL 连接 |
 | `REDIS_HOST` | `localhost` | Redis 地址 |
-| `DASHSCOPE_API_KEY` | — | DeepSeek API Key |
+| `DEEPSEEK_API_KEY` | — | DeepSeek API Key（兼容旧名 `DASHSCOPE_API_KEY`） |
+| `DEEPSEEK_MODEL` | `deepseek-flash` | 模型名（可选 `deepseek-v4-pro`） |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com/` | 模型服务地址 |
 | `app.rag.top-k` | `5` | RAG 检索条数 |
 | `app.sensitive.storage` | `redis` | 敏感资料存储（`memory` 用于 dev/test） |
 | `app.demo-data.enabled` | `true` | 是否创建演示账号 |
@@ -339,6 +342,43 @@ JPA 自动建表（`spring.jpa.hibernate.ddl-auto=update`）：
 | `app.sms.debug-return-code` | `true` | 是否把验证码随响应回传（生产改 `false`） |
 
 开发配置见 `application-dev.properties`（H2 + 内存敏感存储 + 禁用 Redis 自动配置）。
+
+---
+
+## AI 配置与密钥管理
+
+### 密钥怎么给
+
+优先级：`DEEPSEEK_API_KEY` > `DASHSCOPE_API_KEY`（旧变量名，仅为兼容历史配置保留）。
+三种方式任选：
+
+| 场景 | 做法 |
+|------|------|
+| 全栈 Docker | 写进根目录 `.env`（已 gitignore），`docker compose up -d backend` |
+| 本机运行后端 | `$env:DEEPSEEK_API_KEY = "sk-..."` 后 `mvn spring-boot:run` |
+| 临时验证 | `$env:DEEPSEEK_API_KEY="..."` 只对当前终端生效 |
+
+### 封装方式（读代码只看这一个地方）
+
+| 关注点 | 落点 |
+|--------|------|
+| 唯一装配点 | `config/AiConfig.java`：把 `ChatClient.Builder` 构建成全局唯一的 `ChatClient` Bean，`ChatService` / `ResumeAnalysisService` 统一注入它，不再各自 `builder.build()` |
+| 配置项 | `application.properties` 的 `spring.ai.deepseek.*`，全部支持环境变量覆盖 |
+| 密钥脱敏 | `util/SecretMask.java`，启动日志只打印 `sk-1234****cdef` 这种形式 |
+| 启动自检 | `AiConfig#aiConfigReporter`：启动时打印 `base-url` / `model` / 脱敏后的 key；没配 key 会给出明确 WARN，而不是等到调用时才 401 |
+
+启动日志示例：
+
+```
+AI 配置自检：base-url=https://api.deepseek.com/ model=deepseek-flash api-key=sk-1234****cdef
+```
+
+### 密钥不进仓库的约定
+
+- `.env` 已加入 `.gitignore`，仓库里只保留 `.env.example`（占位符）。
+- 源码 / Dockerfile / `docker-compose.yml` 里都不出现明文 Key，只做 `${DEEPSEEK_API_KEY}` 变量引用。
+- 日志、异常提示、启动横幅统一走 `SecretMask`，不打印明文。
+- 轮换密钥：改 `.env`（或环境变量）→ 重启后端即可，无需改代码。
 
 ---
 
@@ -413,7 +453,7 @@ Windows 上 `C:\Program Files\Common Files\Oracle\Java\javapath\java.exe` 是 Or
 401 Unauthorized from POST https://api.deepseek.com/chat/completions
 ```
 
-说明 `DASHSCOPE_API_KEY` 不是有效的 DeepSeek Key（失效、或填的是别的平台的 Key）。
+说明 `DEEPSEEK_API_KEY` 不是有效的 DeepSeek Key（失效、或填的是别的平台的 Key）。
 到 <https://platform.deepseek.com/> 重新申请后写进 `.env`（Docker）或环境变量（本机运行），
 重启后端即可。可以先用下面这条命令验证 Key：
 
@@ -421,9 +461,16 @@ Windows 上 `C:\Program Files\Common Files\Oracle\Java\javapath\java.exe` 是 Or
 curl.exe -s "https://api.deepseek.com/models" -H "Authorization: Bearer <你的Key>"
 ```
 
-如果报 `Model Not Exist`，检查模型名：DeepSeek 官方只有
-`deepseek-chat`（通用）和 `deepseek-reasoner`（推理），可用
-`$env:DEEPSEEK_MODEL="deepseek-reasoner"` 覆盖。
+如果报 `Model Not Exist`，检查模型名。当前可用模型（可用
+`curl.exe -s https://api.deepseek.com/models -H "Authorization: Bearer <Key>"` 查）：
+
+| 模型名 | 说明 |
+|--------|------|
+| `deepseek-flash` | 通用对话，快，默认 |
+| `deepseek-v4-pro` | 能力更强，更慢 |
+
+切换：`$env:DEEPSEEK_MODEL="deepseek-v4-pro"`（Docker 环境改 `.env` 后
+`docker compose up -d backend`）。
 
 ### RAG 向量数据重启后丢失
 

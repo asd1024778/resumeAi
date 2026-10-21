@@ -86,8 +86,11 @@ public class SecurityConfig {
                             return exchange.getResponse().setComplete();
                         }))
                 .authorizeExchange(auth -> auth
-                        // 登录、注册接口公开
-                        .pathMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/register").permitAll()
+                        // 登录、注册、发送注册验证码接口公开
+                        .pathMatchers(HttpMethod.POST,
+                                "/api/auth/login",
+                                "/api/auth/register",
+                                "/api/auth/sms-code").permitAll()
                         // 开发测试接口公开
                         .pathMatchers("/api/dev/**").permitAll()
                         // 其余 API 需认证

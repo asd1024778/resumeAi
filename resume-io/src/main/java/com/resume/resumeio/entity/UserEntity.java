@@ -32,6 +32,15 @@ public class UserEntity {
     @Column(length = 128)
     private String email;
 
+    /**
+     * 手机号，注册主身份。
+     * <p>
+     * 注册时经短信验证码校验通过后才写入本表；全局唯一（历史账号可为空，
+     * MySQL 唯一索引允许多个 NULL）。个人中心的脱敏展示仍复用 Redis 中的敏感资料。
+     */
+    @Column(unique = true, length = 20)
+    private String phone;
+
     /** 账户创建时间，插入后不可修改 */
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

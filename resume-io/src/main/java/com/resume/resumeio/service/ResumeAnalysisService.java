@@ -36,8 +36,9 @@ public class ResumeAnalysisService {
     /** RAG 入库与检索服务 */
     private final RagKnowledgeService ragKnowledgeService;
 
-    public ResumeAnalysisService(ChatClient.Builder chatClient, RagKnowledgeService ragKnowledgeService) {
-        this.chatClient = chatClient.build();
+    public ResumeAnalysisService(ChatClient chatClient, RagKnowledgeService ragKnowledgeService) {
+        // 注入 AiConfig 统一构建的 ChatClient，避免每个 Service 各建一份客户端
+        this.chatClient = chatClient;
         this.ragKnowledgeService = ragKnowledgeService;
     }
 

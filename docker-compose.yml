@@ -1,0 +1,120 @@
+# Resume IO 全栈一键启动（MySQL + Redis + Spring Boot 后端 + Nginx 前端）
+#
+# 启动： docker compose up -d --build
+# 查看： docker compose ps
+# 日志： docker compose logs -f backend
+# 停止： docker compose down          （保留数据卷）
+# 清库： docker compose down -v       （⚠ 连同 MySQL/Redis 数据一起删除）
+#
+# 只想起基础设施、后端前端在本机 mvn / npm 跑：
+#   cd resume-io && docker compose up -d
+#
+# 端口约定（宿主机端口都可在 .env 覆盖，避免和本机 MySQL80 / WSL Redis 冲突）：
+#   前端 5173 -> 容器 80     后端 8080 -> 容器 8080
+#   MySQL 3307 -> 容器 3306  Redis 6380 -> 容器 6379
+
+name: resume-io
+
+services:
+  mysql:
+    image: ${MYSQL_IMAGE:-mysql:8.0}
+    container_name: resume-io-mysql
+    restart: unless-stopped
+    ports:
+      - "${MYSQL_HOST_PORT:-3307}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_PASSWORD:-123456}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-resume_db}"
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./resume-io/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_PASSWORD:-123456}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    container_name: resume-io-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_HOST_PORT:-6380}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ./resume-io
+      args:
+        MAVEN_IMAGE: ${MAVEN_IMAGE:-maven:3.9-eclipse-temurin-17}
+        JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:17-jre-jammy}
+    image: resume-io-backend:latest
+    container_name: resume-io-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    environment:
+      # 注意：容器内走 compose 网络，端口是容器端口，不是宿主机映射端口
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-resume_db}"
+      MYSQL_USERNAME: "${MYSQL_USERNAME:-root}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:-123456}"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      SENSITIVE_STORAGE: "${SENSITIVE_STORAGE:-redis}"
+      # 密钥只从 .env（已 gitignore）注入，不写死在这里；
+      # DASHSCOPE_API_KEY 为历史变量名，兼容保留
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      DASHSCOPE_API_KEY: "${DASHSCOPE_API_KEY:-}"
+      DEEPSEEK_BASE_URL: "${DEEPSEEK_BASE_URL:-https://api.deepseek.com/}"
+      DEEPSEEK_MODEL: "${DEEPSEEK_MODEL:-deepseek-flash}"
+      SMS_DEBUG_RETURN_CODE: "${SMS_DEBUG_RETURN_CODE:-true}"
+      JWT_SECRET: "${JWT_SECRET:-dev-jwt-secret-key-at-least-32-bytes-long}"
+      APP_DEMO_DATA: "${APP_DEMO_DATA:-true}"
+      JAVA_OPTS: "${JAVA_OPTS:--Xms256m -Xmx512m}"
+      TZ: Asia/Shanghai
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # 项目未引入 actuator，这里只验证 8080 能正常应答 HTTP
+      test: ["CMD", "curl", "-sS", "-o", "/dev/null", "--max-time", "3", "http://127.0.0.1:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+
+  frontend:
+    build:
+      context: ./resume-web
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:20-alpine}
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx:1.27-alpine}
+        NPM_REGISTRY: "${NPM_REGISTRY:-}"
+    image: resume-io-frontend:latest
+    container_name: resume-io-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      backend:
+        condition: service_started
+
+volumes:
+  mysql_data:
+  redis_data:

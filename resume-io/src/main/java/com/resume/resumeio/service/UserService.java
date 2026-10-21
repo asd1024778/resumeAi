@@ -6,6 +6,7 @@ import com.resume.resumeio.dto.UserDto;
 import com.resume.resumeio.dto.UserSensitiveProfileDto;
 import com.resume.resumeio.entity.UserEntity;
 import com.resume.resumeio.repository.UserRepository;
+import com.resume.resumeio.util.PhoneUtils;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -15,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 用户账号业务服务。
  * <p>
  * 业务职责：处理用户注册、登录认证、资料查询与敏感信息更新。
- * 账号基础信息（用户名、密码哈希）持久化在关系型数据库；
+ * 账号基础信息（用户名、密码哈希、手机号）持久化在关系型数据库；
  * 敏感资料通过 {@link UserSensitiveProfileService} 存 Redis/内存，与账号表分离。
  */
 @Service
@@ -27,15 +28,19 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     /** 敏感资料读写服务（Redis Key：user:sensitive:{userId}） */
     private final UserSensitiveProfileService sensitiveProfileService;
+    /** 短信验证码服务，注册时校验手机号验证码 */
+    private final SmsCodeService smsCodeService;
 
     public UserService(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
-            UserSensitiveProfileService sensitiveProfileService
+            UserSensitiveProfileService sensitiveProfileService,
+            SmsCodeService smsCodeService
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.sensitiveProfileService = sensitiveProfileService;
+        this.smsCodeService = smsCodeService;
     }
 
     /**
@@ -59,34 +64,65 @@ public class UserService {
     }
 
     /**
-     * 用户注册：校验输入 → 创建账号 → 保存敏感资料 → 返回脱敏用户 DTO。
+     * 手机号注册：格式校验 → 验证码校验 → 唯一性校验 → 落库 → 写敏感资料。
+     * <p>
+     * 业务顺序说明：先做「不消耗验证码」的轻量校验（手机号格式、密码强度、
+     * 用户名/手机号唯一性），最后才校验并消费验证码，
+     * 避免用户因为用户名被占用而白白浪费一条验证码。
      *
-     * @param request 注册请求（用户名、密码、邮箱及可选敏感字段）
+     * @param request 注册请求（手机号、验证码、密码、可选用户名与资料）
      * @return 脱敏后的用户信息
+     * @throws IllegalArgumentException 任一项校验不通过，消息可直接展示给用户
      */
     @Transactional
     public UserDto register(RegisterRequest request) {
-        // 基础字段校验
-        if (request.getUsername() == null || request.getUsername().isBlank()) {
-            throw new IllegalArgumentException("用户名不能为空");
+        if (request == null) {
+            throw new IllegalArgumentException("注册请求不能为空");
         }
-        if (request.getPassword() == null || request.getPassword().length() < 6) {
+
+        // 1. 手机号格式校验（核心逻辑，{@code 1[3-9]\d{9}}，自动兼容 +86 与分隔符）
+        String phone = PhoneUtils.requireValid(request.getPhone());
+
+        // 2. 密码强度：与登录页提示保持一致的最小长度
+        String password = request.getPassword();
+        if (password == null || password.length() < 6) {
             throw new IllegalArgumentException("密码长度不能少于 6 位");
         }
-        if (userRepository.existsByUsername(request.getUsername())) {
-            throw new IllegalArgumentException("用户名已存在");
+        if (password.length() > 64) {
+            throw new IllegalArgumentException("密码长度不能超过 64 位");
         }
-        // 构建用户实体并 BCrypt 加密密码
+
+        // 3. 用户名唯一性：留空时默认用手机号作为用户名
+        String username = request.getUsername() == null || request.getUsername().isBlank()
+                ? phone
+                : request.getUsername().trim();
+        if (username.length() > 64) {
+            throw new IllegalArgumentException("用户名长度不能超过 64 个字符");
+        }
+        if (userRepository.existsByUsername(username)) {
+            throw new IllegalArgumentException("用户名已被占用，请换一个");
+        }
+
+        // 4. 手机号唯一性：一个手机号只能注册一个账号
+        if (userRepository.existsByPhone(phone)) {
+            throw new IllegalArgumentException("该手机号已注册，请直接登录");
+        }
+
+        // 5. 验证码校验（一次性消费）：不通过会抛异常，事务回滚
+        smsCodeService.verifyRegisterCode(phone, request.getCode());
+
+        // 6. 校验全部通过，写入数据库
         UserEntity user = new UserEntity();
-        user.setUsername(request.getUsername().trim());
-        user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        user.setEmail(request.getEmail());
+        user.setUsername(username);
+        user.setPasswordHash(passwordEncoder.encode(password));
+        user.setEmail(blankToNull(request.getEmail()));
+        user.setPhone(phone);
         UserEntity saved = userRepository.save(user);
 
-        // 将注册时提交的敏感字段写入 Redis/内存（与 DB 事务独立）
+        // 7. 敏感资料（含手机号）写入 Redis/内存，保证个人中心脱敏展示可用
         UserSensitiveProfileDto profile = UserSensitiveProfileDto.builder()
                 .realName(request.getRealName())
-                .phone(request.getPhone())
+                .phone(phone)
                 .idCard(request.getIdCard())
                 .address(request.getAddress())
                 .socialAccount(request.getSocialAccount())
@@ -95,6 +131,13 @@ public class UserService {
 
         // 返回脱敏 DTO 给前端，避免泄露完整手机号等
         return UserDto.masked(saved, sensitiveProfileService.getProfile(saved.getId()));
+    }
+
+    /**
+     * 空白字符串转 null，避免库里出现空串邮箱。
+     */
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     /**

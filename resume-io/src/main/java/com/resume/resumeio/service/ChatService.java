@@ -18,8 +18,9 @@ public class ChatService {
     /** RAG 检索与上下文格式化服务 */
     private final RagKnowledgeService ragKnowledgeService;
 
-    public ChatService(ChatClient.Builder chatClient, RagKnowledgeService ragKnowledgeService) {
-        this.chatClient = chatClient.build();
+    public ChatService(ChatClient chatClient, RagKnowledgeService ragKnowledgeService) {
+        // 注入 AiConfig 统一构建的 ChatClient，模型/地址/密钥等配置只在那一处生效
+        this.chatClient = chatClient;
         this.ragKnowledgeService = ragKnowledgeService;
     }
 
