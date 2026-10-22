@@ -115,6 +115,7 @@ Java_projeck/
 - **Maven 3.8+**
 - **Node.js 20+**（前端）
 - **Docker Desktop**（推荐：用它跑 MySQL / Redis，或直接全栈容器化）
+- **云服务器（部署/演示）**：最低 **2 vCPU / 2 GB 内存**（1 GB 会持续 OOM，见「服务器性能边界」）
 - **DeepSeek API Key**（环境变量 `DEEPSEEK_API_KEY`，见下文「AI 配置与密钥管理」）
 
 ### 方式一：全栈 Docker 一键启动（最省事）
@@ -382,6 +383,109 @@ AI 配置自检：base-url=https://api.deepseek.com/ model=deepseek-flash api-ke
 
 ---
 
+## 服务器性能边界（2 核 2 G 实测基线）
+
+> 以下数字来自本项目在一台 **2 vCPU / 2 GB 内存** 的云服务器（宝塔面板 + Docker 全栈）上的实测与调优结果。
+> 这是「能稳定跑起来」的**下限**配置，不是推荐上限。低于这个规格会持续 OOM。
+
+### 内存预算
+
+| 组件 | 常驻内存 | 说明 |
+|---|---|---|
+| 系统 + 云厂商监控（AliyunDun）+ journald | ~265 MB | 不可省 |
+| 宝塔 Nginx（`worker_processes 1`） | ~50 MB | HTTPS 终止层 |
+| MySQL 8 容器（`buffer pool=128M`、关 performance_schema） | ~380 MB | 默认参数会更高 |
+| Redis 7 容器 | ~10 MB | 只存验证码与敏感资料 |
+| 后端 JVM（`-Xmx640m`） | ~600–700 MB | 最大的一块 |
+| 前端 Nginx 容器 | ~10 MB | 纯静态 |
+| **合计** | **~1.4 GB / 1.8 GB 可用** | 余量约 400 MB |
+
+**两条硬结论：**
+
+1. **1 GB 内存跑不动这套组合。** 实测表现为 `mysqld` 与 `java` 被内核 OOM Killer 反复杀掉，日志里只有一行 `Killed`、
+   没有任何 MySQL/JVM 报错；随后 `depends_on: service_healthy` 永远不满足，`/api` 全部 502。
+2. **2 GB 是下限**，且必须配合降配参数（见下表），否则启动阶段就会撞线。
+
+### 关键调优参数（2 核 2 G 专用）
+
+| 参数 | 建议值 | 位置 |
+|---|---|---|
+| `JAVA_OPTS -Xmx` | `640m`（`-Xms256m`） | `docker-compose.yml` → backend |
+| backend `mem_limit` | `1100m` | 同上 |
+| `--innodb-buffer-pool-size` | `128M` | 同上 → mysql `command` |
+| `--performance-schema` | `OFF` | 同上（省 ~100 MB） |
+| `worker_processes` | `1` | 宝塔 `nginx.conf` |
+
+> 注意：`mem_limit` 必须**大于** `-Xmx + 元空间 + 直接内存` 的总和，否则容器会被 cgroup 直接杀掉（表现为 `Exit=137`）。
+
+### 并发与耗时边界
+
+| 指标 | 边界值 | 依据 |
+|---|---|---|
+| 同时进行的 AI 简历分析 | **≤ 3 个** | 每次分析会触发 Tika 解析 + 向量化，内存峰值 +100~200 MB |
+| 同时在线浏览页面 | 10~20 人 | 静态资源由 Nginx 直出，几乎不占后端 |
+| AI 简历分析耗时 | **10~60 秒**（首次更久） | 取决于大模型响应；1 vCPU 下解析大文件也慢 |
+| AI 对话流式首字 | 1~3 秒 | SSE，必须开 `proxy_buffering off` |
+| 模拟面试出题/点评 | 5~20 秒 | 同步调用 LLM |
+| 后端冷启动 | 15~30 秒 | MySQL healthy 后才启动，`start_period` 设了 90s |
+
+> ⚠️ 前端 axios 全局超时目前是 30 秒，**小于 AI 分析的最大耗时**。上传接口应单独放宽到 180 秒，
+> 否则会出现「浏览器报超时、后端其实分析成功并已入库」的假故障。
+
+### 文件与数据边界
+
+| 项 | 上限 | 来源 |
+|---|---|---|
+| 单个简历 / 知识库文件 | **10 MB** | `spring.http.codecs.max-in-memory-size=10MB` |
+| Nginx 上传上限 | 20 MB | `client_max_body_size 20m`（后端 10 MB 会先报错） |
+| 单次上传的解析内存峰值 | 文件大小的 3~5 倍 | Tika 把整个文档读进内存，不是流式落盘 |
+| 向量库文档量 | 建议 ≤ 50 篇 | `SimpleVectorStore` 是**纯内存**实现 |
+| MySQL 数据量 | 建议 ≤ 1 GB | 单实例、单机 30 GB 磁盘、无主从 |
+
+### 已知瓶颈
+
+1. **向量库是内存实现**（`SimpleVectorStore`）：重启后知识库与简历向量全部丢失（面试开始时会自动 re-index 该简历）；
+   文档数量越多，堆内存占用越高。
+2. **全程单实例、无副本**：后端重启期间（20~30 秒）所有请求失败；MySQL / Redis 也是容器单实例，无备份。
+3. **AI 调用无并发保护**：没有队列和限流，并发升高后先变慢、再超时、最后 OOM。
+4. **上传是全量读内存**：文件大小几乎等于内存压力，无法靠流式处理缓解。
+
+### 超出边界时的典型表现
+
+| 现象 | 真实原因 |
+|---|---|
+| `502 Bad Gateway` | 后端容器被 OOM 杀掉或正在重启 |
+| `简历解析或分析失败: null` | 多为大模型调用超时（`TimeoutException` 的 message 就是 null），重试通常能过 |
+| `docker compose ps` 显示 `Restarting` | 反复被内核杀，查 `dmesg -T \| grep -i "killed process"` |
+| 页面能打开但 `/api` 全 502 | 前端容器活着，后端挂了（前端 nginx 只能返回静态页） |
+
+### 如何验证自己的机器是否越界
+
+```bash
+# 实时内存与各容器占用
+docker stats --no-stream
+free -h
+
+# 是否被内核 OOM 杀过（最关键的一条）
+dmesg -T | grep -iE "killed process|out of memory" | tail -10
+
+# 简易并发测试（10 个并发登录，不触发 AI，用于测基础吞吐）
+for i in $(seq 1 10); do
+  curl -s -o /dev/null -w "%{http_code} " -k https://127.0.0.1:8443/api/auth/login \
+    -H 'Content-Type: application/json' -d '{"username":"demo","password":"123456"}' &
+done; wait; echo
+```
+
+### 扩容路线
+
+| 场景 | 建议 |
+|---|---|
+| 只想消除 OOM | 2C2G → 2C4G，`-Xmx` 提到 `1024m`、`mem_limit` 提到 `1600m`，架构不用改 |
+| 多人同时使用 / 正式对外 | 4C8G；MySQL 换云数据库（RDS）、Redis 换云 Redis、向量库换 Redis / Qdrant |
+| 需要高可用 | 后端多副本 + Nginx 负载均衡（JWT 本身无状态，可直接横向扩）；`SimpleVectorStore` 必须先替换 |
+
+---
+
 ## 运行测试
 
 ```powershell
@@ -394,6 +498,20 @@ mvn test
 ---
 
 ## 常见问题
+
+### 容器反复 `Restarting` / 日志只有一行 `Killed`
+
+这是**内存不足被内核 OOM Killer 杀掉**的典型特征：进程是被 SIGKILL 强杀的，所以 MySQL / JVM 都来不及打任何错误日志。
+
+```bash
+docker stats --no-stream
+free -h
+dmesg -T | grep -iE "killed process|out of memory" | tail -10    # ← 决定性证据
+```
+
+- 出现 `Killed process ... (mysqld)` 或 `(java)` → 实锤内存不够，按上文「服务器性能边界」一节的降配/升配建议处理
+- 1 GB 内存的机器**跑不动**这套组合，请直接升到 2 GB
+- 还要确认没有两个 MySQL 在同时跑（宝塔自带的 + 容器里的），那是常见的内存浪费
 
 ### MySQL 连接失败 / `Unable to determine Dialect without JDBC metadata`
 

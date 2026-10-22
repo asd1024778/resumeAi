@@ -18,3 +18,9 @@ resume-web/dev.log
 .idea/
 .vscode/
 *.log
+
+# ===== 镜像导出包（本地 docker save 产物，不要提交）=====
+backend-*.tar
+backend-*.tar.gz
+frontend-*.tar
+frontend-*.tar.gz
