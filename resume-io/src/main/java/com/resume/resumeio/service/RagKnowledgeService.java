@@ -190,10 +190,14 @@ public class RagKnowledgeService {
 
     /**
      * 将业务 Chunk 转为 Spring AI Document，并合并 metadata。
+     * <p>
+     * id 采用「docId-块序号」的确定性写法：同一份文档重复入库时 id 相同，
+     * SimpleVectorStore 按 id 覆盖写入，避免重复分析/面试把向量库撑大并挤占 topK 名额。
      */
     private Document toDocument(DocumentChunk chunk, Map<String, String> metadata) {
         Map<String, Object> meta = new HashMap<>(metadata);
-        return new Document(chunk.getContent(), meta);
+        String id = chunk.getDocumentId() + "-" + chunk.getChunkIndex();
+        return new Document(id, chunk.getContent(), meta);
     }
 
     /**

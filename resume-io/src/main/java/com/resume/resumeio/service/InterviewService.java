@@ -18,6 +18,7 @@ import reactor.core.publisher.Flux;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -41,6 +42,18 @@ public class InterviewService {
     private static final Pattern LEADING_NUMBER = Pattern.compile("^\\d+[.、)\\]\\s]+");
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    /** 首题 Prompt 里携带的简历最大字符数，过长的简历会截断以控制 token 成本 */
+    private static final int MAX_FIRST_QUESTION_RESUME_CHARS = 3000;
+
+    /** 首题切入点候选：每次随机取一个，避免同一份简历反复面试问同一处 */
+    private static final List<String> OPENING_ANGLES = List.of(
+            "最具代表性的项目及其技术难点与方案取舍",
+            "某项技术的深度细节（并发、存储、性能优化、稳定性之一）",
+            "简历中的量化成果，反推是怎么做到的",
+            "工程化实践（测试、部署、监控、CI/CD）",
+            "一次踩坑或失败经历及其复盘"
+    );
 
     private final InterviewSessionRepository sessionRepository;
     private final InterviewQuestionRepository questionRepository;
@@ -284,15 +297,46 @@ public class InterviewService {
         return question;
     }
 
+    /**
+     * 生成第一道面试题。
+     * <p>
+     * 与后续题目不同，首题**不依赖 RAG 检索**，而是把简历全文直接放进 Prompt。
+     * 原因：首题的检索 query 是固定语义，配合本地哈希向量会稳定命中同一批片段，
+     * 导致「每次开面试都是同一道题」；简历本身只有几 KB，整段喂给模型既更准，
+     * 也保证不同简历必然得到不同问题。
+     * <p>
+     * 同时每次随机选一个切入点（项目难点 / 技术深度 / 量化成果 / 工程化 / 踩坑复盘），
+     * 让同一份简历多次面试也不会重复。
+     */
     private String generateFirstQuestion(long reportId, long userId) {
+        String resumeText = reportStoreService.getParsedTextByReportId(reportId, userId);
+        String resumeSnippet = resumeText == null ? "" : resumeText.strip();
+        if (resumeSnippet.length() > MAX_FIRST_QUESTION_RESUME_CHARS) {
+            resumeSnippet = resumeSnippet.substring(0, MAX_FIRST_QUESTION_RESUME_CHARS);
+        }
+        if (resumeSnippet.isBlank()) {
+            // 简历文本为空时退回 RAG 路径，避免 Prompt 里没有素材
+            String fallbackInstruction = """
+                    你是资深技术面试官。请根据候选人简历（见参考资料）提出第一道面试问题。
+                    要求：结合简历中的项目、技能或经历切入，避免通用套话；只输出一个问题本身。
+                    """;
+            return generateQuestionText("首题 简历 项目 技能", reportId, userId, fallbackInstruction, 0);
+        }
+
+        // 随机切入点：避免同一份简历反复面试时问同一处
+        String angle = OPENING_ANGLES.get(ThreadLocalRandom.current().nextInt(OPENING_ANGLES.size()));
         String instruction = """
-                你是资深技术面试官。请根据候选人简历（见参考资料）自主决定并提出第一道面试问题。
+                你是资深技术面试官。下面是候选人的简历全文：
+                【简历全文】
+                %s
+
+                本次请从「%s」这个角度切入，提出第一道面试问题。
                 要求：
-                - 结合简历中的项目、技能或经历切入，避免通用套话
-                - 可从自我介绍、代表性项目、技术深度等角度择一开场
+                - 必须结合简历中的具体项目名、技术选型或细节，避免通用套话
+                - 不要与常见的“请先做个自我介绍”雷同
                 - 只输出一个问题本身，不要编号、不要解释、不要多个问题
-                """;
-        return generateQuestionText("首题 简历 项目 技能", reportId, userId, instruction, 0);
+                """.formatted(resumeSnippet, angle);
+        return generateQuestionText("面试开场 " + angle, reportId, userId, instruction, 0);
     }
 
     private String generateNextQuestion(long reportId, long userId, List<InterviewQuestionEntity> questions) {
