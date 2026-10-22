@@ -60,8 +60,8 @@ public class ResumeAnalysisService {
         for (String query : ANALYSIS_QUERIES) {
             uniqueDocs.addAll(ragKnowledgeService.searchResume(userId, resumeId, query, 2));
         }
-        // 补充全局知识库：HR 评估标准、面试评分规范等
-        uniqueDocs.addAll(ragKnowledgeService.searchKnowledge("简历评估 HR 面试 评分标准", 2));
+        // 补充知识库：HR 评估标准、面试评分规范等（全局 + 当前用户自己的）
+        uniqueDocs.addAll(ragKnowledgeService.searchKnowledge("简历评估 HR 面试 评分标准", userId, 2));
 
         // 将去重后的 Document 格式化为【参考资料】文本块
         String context = ragKnowledgeService.formatContext(new ArrayList<>(uniqueDocs));

@@ -108,12 +108,13 @@ public class ChatService {
      * @return 可发送给大模型的完整 user 消息
      */
     private String buildRagPrompt(String question, long userId, Long resumeId) {
-        // topK=5：最多取 5 段参考资料注入上下文
+        // topK=5：最多取 5 段参考资料注入上下文（已按用户隔离，并按相似度排序）
         var docs = ragKnowledgeService.searchHybrid(question, userId, resumeId, 5);
-        // 转为「【参考】...」多段文本
+        // 转为带来源标注的多段文本
         String context = ragKnowledgeService.formatContext(docs);
         return """
                 你是 AI 简历与面试助手。请优先依据【参考资料】回答；资料不足时可补充通用建议，并说明依据不足。
+                注意：【候选人本人简历】是候选人的真实经历；【通用参考知识】只是通用规范，不可当作候选人经历。
                 回答简洁、专业、可操作。
 
                 【参考资料】

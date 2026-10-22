@@ -24,3 +24,6 @@ backend-*.tar
 backend-*.tar.gz
 frontend-*.tar
 frontend-*.tar.gz
+
+# ===== 本地操作手册（不上传 git）=====
+VECTOR-STORE-OPTIMIZE.md

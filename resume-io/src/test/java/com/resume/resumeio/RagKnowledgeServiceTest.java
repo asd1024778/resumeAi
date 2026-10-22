@@ -32,14 +32,17 @@ class RagKnowledgeServiceTest {
 
     @Test
     void searchKnowledgeShouldReturnSeededContent() {
-        var docs = ragKnowledgeService.searchKnowledge("简历 STAR 法则 项目描述", 2);
+        // 内置知识库归属全局用户（userId=0），任意用户都应能检索到
+        var docs = ragKnowledgeService.searchKnowledge("简历 STAR 法则 项目描述", 99L, 2);
         assertFalse(docs.isEmpty());
     }
 
     @Test
     void formatContextShouldWrapReferences() {
-        var docs = ragKnowledgeService.searchKnowledge("面试技巧", 1);
+        var docs = ragKnowledgeService.searchKnowledge("面试技巧", 99L, 1);
         String ctx = ragKnowledgeService.formatContext(docs);
-        assertTrue(ctx.contains("【参考】") || ctx.contains("未检索到"));
+        assertTrue(ctx.contains("【通用参考知识】")
+                || ctx.contains("【候选人本人简历】")
+                || ctx.contains("未检索到"));
     }
 }

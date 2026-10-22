@@ -8,6 +8,7 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -115,20 +116,24 @@ public class RagKnowledgeService {
     }
 
     /**
-     * 检索全局知识库（面试技巧、简历规范、评分标准等）。
+     * 检索知识库：全局知识库（userId=0 的内置规范）+ 当前用户自己上传的知识文档。
      * <p>
-     * 仅按 sourceType=knowledge 过滤，不限定 userId/resumeId。
+     * 必须按 userId 隔离：否则任何用户通过「知识库上传」传进来的内容
+     * （可能是简历）都会出现在其他用户的 RAG 上下文里，造成跨用户信息泄漏。
      *
-     * @param query 检索 query
-     * @param topK  返回条数
+     * @param query  检索 query
+     * @param userId 当前用户 ID
+     * @param topK   返回条数
      */
-    public List<Document> searchKnowledge(String query, int topK) {
+    public List<Document> searchKnowledge(String query, long userId, int topK) {
+        // sourceType == 'knowledge' && (userId == '0'（全局） || userId == 当前用户)
+        String filter = RagConstants.META_SOURCE_TYPE + " == '" + RagConstants.SOURCE_KNOWLEDGE + "'"
+                + " && (" + RagConstants.META_USER_ID + " == '" + RagConstants.GLOBAL_USER_ID
+                + "' || " + RagConstants.META_USER_ID + " == '" + userId + "')";
         return vectorStore.similaritySearch(SearchRequest.builder()
                 .query(query)
                 .topK(topK)
-                .filterExpression(buildFilter(
-                        RagConstants.META_SOURCE_TYPE, RagConstants.SOURCE_KNOWLEDGE
-                ))
+                .filterExpression(filter)
                 .build());
     }
 
@@ -143,28 +148,43 @@ public class RagKnowledgeService {
      * @param topK     最终返回总条数上限
      */
     public List<Document> searchHybrid(String query, long userId, Long resumeId, int topK) {
-        // 知识库取约一半配额，至少 2 条
-        List<Document> merged = new ArrayList<>(searchKnowledge(query, Math.max(2, topK / 2)));
+        // 知识库取约一半配额，至少 2 条（已按用户隔离）
+        List<Document> merged = new ArrayList<>(searchKnowledge(query, userId, Math.max(2, topK / 2)));
         if (resumeId != null) {
             // 简历侧同样取约一半配额
             merged.addAll(searchResume(userId, resumeId, query, Math.max(2, topK / 2)));
         }
-        // 合并后可能超过 topK，截断
-        return merged.stream().limit(topK).toList();
+        // 按相似度降序合并：避免「知识库恒定在前」的顺序截断挤掉更相关的简历块，
+        // 也避免模型把排在前面的通用知识误当成候选人本人的经历。
+        return merged.stream()
+                .sorted(Comparator.comparing(Document::getScore,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(topK)
+                .toList();
     }
 
     /**
      * 将检索到的 Document 列表格式化为可注入 Prompt 的【参考资料】文本块。
+     * <p>
+     * 每段前标注来源类型（候选人本人简历 / 通用参考知识），
+     * 避免大模型把通用规范误当成候选人的真实经历。
      *
      * @param documents RAG 检索结果
-     * @return 多段「【参考】...」拼接的字符串；无结果时返回提示语
+     * @return 多段「【候选人本人简历】...」拼接的字符串；无结果时返回提示语
      */
     public String formatContext(List<Document> documents) {
         if (documents == null || documents.isEmpty()) {
             return "（未检索到相关参考资料，请基于常识回答。）";
         }
         return documents.stream()
-                .map(doc -> "【参考】" + doc.getText())
+                .map(doc -> {
+                    String sourceType = String.valueOf(
+                            doc.getMetadata().get(RagConstants.META_SOURCE_TYPE));
+                    String label = RagConstants.SOURCE_RESUME.equals(sourceType)
+                            ? "【候选人本人简历】"
+                            : "【通用参考知识】";
+                    return label + doc.getText();
+                })
                 .collect(Collectors.joining("\n\n"));
     }
 
